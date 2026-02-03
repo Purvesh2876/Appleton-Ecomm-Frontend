@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
     Box, Flex, Text, Image, Button, HStack, VStack, Input, Heading,
-    Divider, Table, Tbody, Tr, Td, Container, Checkbox, Textarea, useToast, Center, Spinner, Stack
+    Divider, Table, Tbody, Tr, Td, Container, Textarea, useToast, Center, Spinner
 } from '@chakra-ui/react';
 import { getCart, createOrder, verifyPayment, clearUserCart } from '../actions/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
 import OrderSteps from '../components/OrderSteps';
 
 const loadScript = (src) => {
@@ -18,6 +18,7 @@ const loadScript = (src) => {
 };
 
 const CheckoutPage = () => {
+    const location = useLocation(); // Hook to get data from navigate state
     const [cartItems, setCartItems] = useState([]);
     const [cartTotal, setCartTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -26,6 +27,12 @@ const CheckoutPage = () => {
         streetAddress: '', apartment: '', city: '',
         state: '', pincode: '', phone: '', email: '', orderNotes: ''
     });
+
+    // 1. EXTRACT COUPON DATA FROM NAVIGATION STATE
+    const {
+        discount = 0,
+        appliedCode = null
+    } = location.state || {};
 
     const toast = useToast();
     const navigate = useNavigate();
@@ -39,6 +46,7 @@ const CheckoutPage = () => {
         } catch (error) { console.error(error); }
         finally { setLoading(false); }
     };
+
     useEffect(() => {
         fetchCheckoutData();
     }, []);
@@ -54,21 +62,20 @@ const CheckoutPage = () => {
             pincode, orderNotes
         } = formData;
 
-        // 1. Validation for the frontend
         if (!phone || !firstName || !email || !streetAddress || !pincode) {
             toast({ title: "Please fill required fields", status: "warning" });
             return;
         }
-        // 2. Load Razorpay
+
         const res = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
         if (!res) {
             toast({ title: "Payment system failed to load", status: "error" });
             return;
         }
 
-        // 2. Prepare Order Data aligned with your Mongoose Schema
+        // 2. PREPARE SECURE ORDER DATA
+        // Note: 'amount' is no longer required as Backend recalculates
         const orderData = {
-            amount: cartTotal, // Matches schema field 'totalAmount'
             currency: "INR",
             receipt: `rcpt_${Date.now()}`,
             shippingInfo: {
@@ -77,27 +84,29 @@ const CheckoutPage = () => {
                 phone,
                 address: apartment ? `${streetAddress}, ${apartment}` : streetAddress,
                 city,
-                state, // Matches the optional 'state' field in your schema
+                state,
                 pincode: Number(pincode)
             },
             orderNotes: orderNotes,
+            // SEND COUPON CODE TO BACKEND
+            couponCode: appliedCode,
             items: cartItems.map(item => ({
                 product: item.product._id,
                 quantity: item.quantity,
-                // FIX: Use 'priceAtOrder' and 'totalPrice' to satisfy OrderItemSchema
-                price: Number(item.currentPrice),
             }))
         };
-        const token = localStorage.getItem("token");
-        const headers = { Authorization: `Bearer ${token}` };
+
         try {
+            // This calls your updated secure backend
             const data = await createOrder(orderData);
+
             if (!data.success || !data.razorpayOrder) {
                 throw new Error("Order creation failed on server.");
             }
+
             const options = {
-                key: "rzp_test_S0jaQgN2TWpblg",
-                amount: data.razorpayOrder.amount,
+                key: "rzp_test_S0jaQgN2TWpblg", // Replace with your key
+                amount: data.razorpayOrder.amount, // Secured amount from backend
                 currency: data.razorpayOrder.currency,
                 name: "Appleton World",
                 order_id: data.razorpayOrder.id,
@@ -109,30 +118,26 @@ const CheckoutPage = () => {
                             razorpay_signature: response.razorpay_signature,
                         };
                         const verifyResponse = await verifyPayment(verifyData);
-                        console.log("Verify response:", verifyResponse);
+
                         if (verifyResponse.success) {
                             toast({ title: "Order Placed Successfully!", status: "success" });
-                            // Reset local states
-                            // --- NEW STEP: CLEAR THE CART ---
                             await clearUserCart();
-                            // setOrderModalOpen(false);
-                            // setCartOpen(false);
-                            // setCurrentStep(0);
-                            fetchCheckoutData();
+                            // Redirect to success page or refresh
+                            navigate('/order-success', { state: { orderId: response.razorpay_order_id } });
                         }
                     } catch (verifyErr) {
                         console.error("Verification error:", verifyErr);
                     }
                 },
                 prefill: { name: `${firstName} ${lastName}`, email, contact: phone },
-                theme: { color: "#A22B21" }
+                theme: { color: brandColor }
             };
-            console.log("Loading Razorpay script...");
+
             const rzp = new window.Razorpay(options);
             rzp.open();
         } catch (error) {
             console.error("Order error:", error);
-            toast({ title: "Order failed", status: "error" });
+            toast({ title: "Order failed", description: error.message, status: "error" });
         }
     };
 
@@ -140,16 +145,6 @@ const CheckoutPage = () => {
 
     return (
         <Box bg="white" minH="100vh" pb={20}>
-            {/* Header with CHECKOUT highlighted */}
-            {/* <Box bg="black" color="white" py={10} textAlign="center">
-                <HStack justify="center" spacing={4} fontSize="sm" fontWeight="bold">
-                    <Text color="gray.500">SHOPPING CART</Text>
-                    <Text color="gray.500">→</Text>
-                    <Text borderBottom="2px solid white">CHECKOUT</Text>
-                    <Text color="gray.500">→</Text>
-                    <Text color="gray.500">ORDER COMPLETE</Text>
-                </HStack>
-            </Box> */}
             <OrderSteps />
 
             <Container maxW="container.xl" mt={10}>
@@ -188,8 +183,22 @@ const CheckoutPage = () => {
                                     </Tr>
                                 ))}
                                 <Tr><Td fontSize="xs" fontWeight="bold">Subtotal</Td><Td fontSize="xs" fontWeight="bold" textAlign="right">₹{cartTotal}</Td></Tr>
+
+                                {/* DISPLAY DISCOUNT HERE */}
+                                {discount > 0 && (
+                                    <Tr>
+                                        <Td fontSize="xs" fontWeight="bold" color="green.600">Discount ({appliedCode})</Td>
+                                        <Td fontSize="xs" fontWeight="bold" textAlign="right" color="green.600">- ₹{discount}</Td>
+                                    </Tr>
+                                )}
+
                                 <Tr><Td fontSize="xs" fontWeight="bold">Shipping</Td><Td fontSize="xs" textAlign="right">Free shipping</Td></Tr>
-                                <Tr><Td fontSize="md" fontWeight="bold">Total</Td><Td fontSize="md" fontWeight="bold" textAlign="right" color={brandColor}>₹{cartTotal}</Td></Tr>
+                                <Tr>
+                                    <Td fontSize="md" fontWeight="bold">Total</Td>
+                                    <Td fontSize="md" fontWeight="bold" textAlign="right" color={brandColor}>
+                                        ₹{cartTotal - discount}
+                                    </Td>
+                                </Tr>
                                 <Tr><Td fontSize="xs" fontWeight="bold">Total Weight</Td><Td fontSize="xs" fontWeight="bold" textAlign="right">{cartItems.reduce((acc, i) => acc + (i.product.weight * i.quantity), 0)} g</Td></Tr>
                             </Tbody>
                         </Table>
