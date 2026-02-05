@@ -38,6 +38,10 @@ const ShopPage = () => {
     const [quantities, setQuantities] = useState({});
     const [mobileSort, setMobileSort] = useState("");
     const [viewMode, setViewMode] = useState("grid"); // New state for view mode
+    const [priceRange, setPriceRange] = useState({
+        min: 0,
+        max: 0,
+    });
 
     const { isOpen, onOpen, onClose } = useDisclosure();
     const toast = useToast();
@@ -403,6 +407,10 @@ const ShopPage = () => {
                                     minW={viewMode === "list" ? "150px" : "full"} // Fixed width in list mode
                                     maxW={viewMode === "list" ? "150px" : "full"}
                                     onClick={() => navigate(`/productDetails/${product._id}`)}
+                                // onClick={() => {
+                                //     if (product.stock <= 0) return;
+                                //     navigate(`/productDetails/${product._id}`)
+                                // }}
                                 >
                                     <Image
                                         src={`${process.env.REACT_APP_API_URL}uploads${product.images[0]}`}
@@ -449,6 +457,7 @@ const ShopPage = () => {
                                             flex={1}
                                             isLoading={cartLoading[product._id]}
                                             onClick={() => handleAddToCart(product)}
+                                        // isDisabled={product.stock <= 0}
                                         >
                                             Add To Cart
                                         </Button>

@@ -6,7 +6,7 @@ import {
   Badge
 } from '@chakra-ui/react';
 import { CloseIcon } from '@chakra-ui/icons';
-import { getCart, getPublicCoupons, removeFromCart, updateCartQty, validateCoupon } from '../actions/api'; // Added validateCoupon
+import { getAvailableCoupons, getCart, getPublicCoupons, removeFromCart, updateCartQty, validateCoupon } from '../actions/api'; // Added validateCoupon
 import { useNavigate } from 'react-router-dom';
 import OrderSteps from '../components/OrderSteps';
 
@@ -43,19 +43,41 @@ const CartPage = () => {
     }
   };
 
+  // const fetchOffers = async () => {
+  //   try {
+  //     const coupons = await getPublicCoupons();
+  //     setAvailableCoupons(coupons);
+  //   } catch (error) {
+  //     console.error("Error fetching offers:", error);
+  //   }
+  // };
   const fetchOffers = async () => {
     try {
-      const coupons = await getPublicCoupons();
+      const coupons = await getAvailableCoupons({
+        cartItems,
+        cartTotal
+      });
       setAvailableCoupons(coupons);
     } catch (error) {
       console.error("Error fetching offers:", error);
     }
   };
 
+
   useEffect(() => {
     fetchCart();
-    fetchOffers(); // Add this line here
   }, []);
+
+  useEffect(() => {
+    if (cartItems.length > 0) {
+      fetchOffers();
+    }
+  }, [cartItems, cartTotal]);
+
+  useEffect(() => {
+    console.log("Available coupons:", availableCoupons);
+  }, [availableCoupons]);
+
 
   // useEffect(() => { fetchCart(); }, []);
 
@@ -230,71 +252,64 @@ const CartPage = () => {
                   OFFERS FOR YOU
                 </Text>
                 <VStack align="stretch" spacing={3}>
-                  {availableCoupons
-                    .filter((coupon) => {
-                      // 1. If it's a GLOBAL coupon (no category, no products), always show it
-                      if (!coupon.category && (!coupon.applicableProducts || coupon.applicableProducts.length === 0)) {
-                        return true;
-                      }
+                  {availableCoupons.map((coupon) => (
+                    <Flex
+                      key={coupon._id}
+                      bg="white"
+                      p={3}
+                      borderRadius="md"
+                      border="1px dashed"
+                      borderColor={coupon.isLocked ? "gray.300" : "orange.300"}
+                      justify="space-between"
+                      align="center"
+                      shadow="sm"
+                      opacity={coupon.isLocked ? 0.6 : 1}
+                    >
+                      <VStack align="start" spacing={0}>
+                        <HStack>
+                          <Badge colorScheme="orange" variant="solid" fontSize="10px">
+                            {coupon.code}
+                          </Badge>
 
-                      // 2. If it targets a CATEGORY, check if any cart item matches that category
-                      if (coupon.category) {
-                        // We check the category ID. Note: Ensure your backend populates the category ID or object.
-                        const categoryId = coupon.category._id || coupon.category;
-                        return cartItems.some(item => item.product.category === categoryId);
-                      }
-
-                      // 3. If it targets specific PRODUCTS, check if any cart item matches those IDs
-                      if (coupon.applicableProducts && coupon.applicableProducts.length > 0) {
-                        return cartItems.some(item =>
-                          coupon.applicableProducts.includes(item.product._id)
-                        );
-                      }
-
-                      return false;
-                    })
-                    .map((coupon) => (
-                      <Flex
-                        key={coupon._id}
-                        bg="white"
-                        p={3}
-                        borderRadius="md"
-                        border="1px dashed"
-                        borderColor="orange.300"
-                        justify="space-between"
-                        align="center"
-                        shadow="sm"
-                      >
-                        <VStack align="start" spacing={0}>
-                          <HStack>
-                            <Badge colorScheme="orange" variant="solid" fontSize="10px">{coupon.code}</Badge>
-                            <Text fontSize="xs" fontWeight="bold" color="gray.700">
-                              {coupon.type === 'percentage' ? `${coupon.value}% OFF` : `₹${coupon.value} OFF`}
-                            </Text>
-                          </HStack>
-                          <Text fontSize="xs" mt={1} color="gray.600">{coupon.description}</Text>
-
-                          {/* NUDGE: Order Value check */}
-                          {cartTotal < coupon.minCartValue && (
-                            <Text fontSize="10px" color="red.500" fontWeight="500" mt={1}>
-                              Add ₹{coupon.minCartValue - cartTotal} more to unlock
-                            </Text>
+                          {coupon.isUsed && (
+                            <Badge colorScheme="red" fontSize="10px">
+                              USED
+                            </Badge>
                           )}
-                        </VStack>
 
-                        <Button
-                          size="xs"
-                          colorScheme="orange"
-                          isDisabled={cartTotal < coupon.minCartValue}
-                          onClick={() => {
-                            setCouponCode(coupon.code);
-                            handleApplyCoupon(coupon.code);
-                          }}
-                        >
-                          Apply
-                        </Button>
-                      </Flex>
-                    ))}
+                          <Text fontSize="xs" fontWeight="bold" color="gray.700">
+                            {coupon.type === 'percentage'
+                              ? `${coupon.value}% OFF`
+                              : `₹${coupon.value} OFF`}
+                          </Text>
+                        </HStack>
+
+                        <Text fontSize="xs" mt={1} color="gray.600">
+                          {coupon.description}
+                        </Text>
+
+                        {/* 🔒 LOCK REASON FROM BACKEND */}
+                        {coupon.isLocked && (
+                          <Text fontSize="10px" color="red.500" fontWeight="500" mt={1}>
+                            {coupon.lockReason}
+                          </Text>
+                        )}
+                      </VStack>
+
+                      <Button
+                        size="xs"
+                        colorScheme="orange"
+                        isDisabled={coupon.isLocked}
+                        onClick={() => {
+                          setCouponCode(coupon.code);
+                          handleApplyCoupon(coupon.code);
+                        }}
+                      >
+                        Apply
+                      </Button>
+                    </Flex>
+                  ))}
+
                 </VStack>
               </Box>
             )}

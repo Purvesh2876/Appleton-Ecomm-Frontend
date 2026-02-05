@@ -339,3 +339,13 @@ export const getPublicCoupons = async () => {
         throw error.response?.data?.message || "Error fetching coupons";
     }
 };
+
+// Get only coupons applicable to current user + cart
+export const getAvailableCoupons = async (payload) => {
+    try {
+        const { data } = await instance.post('/v1/coupons/getAvailableCouponsForUser', payload);
+        return data.coupons;
+    } catch (error) {
+        throw error.response?.data?.message || "Error fetching available coupons";
+    }
+};
